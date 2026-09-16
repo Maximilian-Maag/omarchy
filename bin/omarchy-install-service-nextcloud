@@ -12,9 +12,17 @@ enable_hyprland_autostart() {
   mkdir -p "$(dirname "$HYPR_AUTOSTART_FILE")"
   touch "$HYPR_AUTOSTART_FILE"
 
-  if ! grep -Fxq "$HYPR_AUTOSTART_ENTRY" "$HYPR_AUTOSTART_FILE"; then
-    printf '\n%s\n' "$HYPR_AUTOSTART_ENTRY" >>"$HYPR_AUTOSTART_FILE"
+  if grep -Fxq "$HYPR_AUTOSTART_ENTRY" "$HYPR_AUTOSTART_FILE"; then
+    return
   fi
+
+  # Only add the separating newline when the file does not already end in one,
+  # so removing the entry again leaves the file exactly as it was found.
+  if [[ -s $HYPR_AUTOSTART_FILE && -n $(tail -c1 "$HYPR_AUTOSTART_FILE") ]]; then
+    printf '\n' >>"$HYPR_AUTOSTART_FILE"
+  fi
+
+  printf '%s\n' "$HYPR_AUTOSTART_ENTRY" >>"$HYPR_AUTOSTART_FILE"
 }
 
 echo "Installing Nextcloud..."
