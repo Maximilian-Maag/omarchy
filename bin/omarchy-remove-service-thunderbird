@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# omarchy:summary=Remove Thunderbird and hand mailto: links back to the previous default.
+# omarchy:requires-sudo=true
+
+THUNDERBIRD_DESKTOP="org.mozilla.Thunderbird.desktop"
+FALLBACK_DESKTOP="HEY.desktop"
+
+release_mailto_handler() {
+  if [[ $(xdg-mime query default x-scheme-handler/mailto) != "$THUNDERBIRD_DESKTOP" ]]; then
+    return
+  fi
+
+  if [[ -f "$HOME/.local/share/applications/$FALLBACK_DESKTOP" ]]; then
+    xdg-mime default "$FALLBACK_DESKTOP" x-scheme-handler/mailto
+  fi
+}
+
+release_mailto_handler
+omarchy-pkg-drop thunderbird
+
+echo ""
+echo "Thunderbird has been removed."
