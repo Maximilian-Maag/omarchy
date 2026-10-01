@@ -52,6 +52,12 @@ pass "modeless recovery retries unanswered queries without waiting on a dead com
 grep -F 'configreloaded\>\>*)' "$monitor_watch" >/dev/null
 pass "modeless recovery also runs after a config reload"
 
+# A 0x0 external only gains its mode through a reload, which no hotplug follows.
+reload_arm=$(grep -F -A4 'configreloaded\>\>*)' "$monitor_watch")
+grep -F 'sync_clamshell_after_monitor_change' <<<"$reload_arm" >/dev/null
+grep -F 'sync_poll_state' <<<"$reload_arm" >/dev/null
+pass "a config reload reconciles clamshell once a modeless monitor gains a mode"
+
 grep -F 'omarchy-hyprland-reload-guard paused' "$monitor_watch" >/dev/null
 pass "modeless recovery does not reload into a package transaction"
 
