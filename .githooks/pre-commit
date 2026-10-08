@@ -1,0 +1,15 @@
+#!/bin/bash
+# Policy as code — refuse a commit that violates this repository's policies.
+#
+# Install once per clone:   git config core.hooksPath .githooks
+# Policies + documented exceptions live in policy.json; the checks are in
+# tools/policy_check.py. Emergency override (use sparingly, and fix it after):
+#   git commit --no-verify
+set -euo pipefail
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "pre-commit: python3 not found — skipping the policy check" >&2
+  exit 0
+fi
+
+exec python3 tools/policy_check.py --changed

@@ -1,0 +1,15 @@
+name: policy
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the checker ratchets against the base branch
+      - name: Policy as code
+        run: python3 tools/policy_check.py --ci

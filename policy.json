@@ -1,0 +1,25 @@
+{
+  "checker": 3,
+  "plugin": false,
+  "shell_style": true,
+  "shebang": "bash",
+  "ignore": [],
+  "allow": {
+    "symlinks": {
+      "default/chromium/extensions/copy-url/icon.png": "upstream: relative symlink inside an extension dir"
+    },
+    "abs_path": {
+      "test/shell.d/bar-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/clipboard-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/copy-url-shortcut-migration-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/git-url-check-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/hermes-cli-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/hyprland-paths-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/launcher-remove-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/legacy-power-udev-rules-migration-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/notifications-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/retired-installer-artifacts-migration-test.sh": "upstream test fixture using /home/dhh",
+      "test/shell.d/windows-vm-mount-boundary-test.sh": "upstream test fixture using /home/dhh"
+    }
+  }
+}

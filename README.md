@@ -77,3 +77,23 @@ its screenshots are also hosted.
 ## License
 
 Omarchy is released under the [MIT License](https://opensource.org/licenses/MIT).
+
+<!-- policy-as-code -->
+
+## Policy as code
+
+Policies that only live in prose drift. This repository enforces its own in
+`tools/policy_check.py` (dependency-free), configured by `policy.json`:
+
+    python3 tools/policy_check.py            # every tracked file
+    python3 tools/policy_check.py --changed  # only what you changed (pre-commit)
+    python3 tools/policy_check.py --ci       # changed vs the base branch (CI)
+
+`--changed` is wired into `.githooks/pre-commit` and the checks also run in
+`.github/workflows/policy.yml`, so a violation fails the commit or the pull
+request. After cloning, enable the hook once:
+
+    git config core.hooksPath .githooks
+
+Documented exceptions belong in `policy.json` under `allow`, each with a reason —
+an exception you can read is a decision; a check nobody runs is decoration.
