@@ -505,22 +505,36 @@ def main() -> int:
 
     ignore = cfg.get("ignore", [])
     mode = "ci" if args.ci else "changed" if args.changed else "all"
-    files = changed_files(mode) if mode != "all" else git("ls-files", "-z")
-    if files is None:
-        rep.warn("scope/changed-files", "could not determine the base — falling back to all files")
-        files = git("ls-files", "-z")
-    if not files:
-        # Never report a green run over nothing: a broken invocation must be loud.
-        rep.fail("scope/files-found", f"no tracked files found (mode={mode}) — is this a git repo?")
+    tracked = git("ls-files", "-z")
+
+    if mode == "all":
+        files = tracked
+    else:
+        files = changed_files(mode)
+        if files is None:
+            rep.warn("scope/changed-files", "no usable base ref — checking every tracked file")
+            files = tracked
+        elif not files:
+            if mode == "ci":
+                # A push to the default branch has an empty diff against its own
+                # base, so "nothing changed" is normal there. CI is the audit, so
+                # look at the whole tree instead of passing on nothing (the
+                # pre-commit hook keeps the fast per-change ratchet).
+                rep.warn("scope/changed-files",
+                         "nothing changed vs the base — auditing every tracked file")
+                files = tracked
+            else:
+                rep.ok("scope/nothing-to-check", "no changed files")
 
     import fnmatch
     files = [f for f in files if not any(fnmatch.fnmatch(f, pat) for pat in ignore)]
     files = [f for f in files if (repo / f).exists()]
-    if mode == "all" and len(files) < 2:
+    if not files:
+        # Never report a green run over nothing: a broken invocation must be loud.
+        rep.fail("scope/files-found",
+                 f"nothing to check (mode={mode}) — is this a git repo, and is the base ref fetchable?")
+    elif mode == "all" and len(files) < 2:
         rep.fail("scope/files-found", f"only {len(files)} file(s) matched after ignore rules")
-
-    if not files and mode != "all":
-        rep.ok("scope/nothing-to-check", f"mode={mode}")
 
     for check in CHECKS:
         if check is check_version_bumped:
