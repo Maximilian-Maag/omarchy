@@ -506,6 +506,7 @@ def main() -> int:
     ignore = cfg.get("ignore", [])
     mode = "ci" if args.ci else "changed" if args.changed else "all"
     tracked = git("ls-files", "-z")
+    noop = False                     # "there is genuinely nothing to check"
 
     if mode == "all":
         files = tracked
@@ -524,13 +525,14 @@ def main() -> int:
                          "nothing changed vs the base — auditing every tracked file")
                 files = tracked
             else:
+                noop = True
                 rep.ok("scope/nothing-to-check", "no changed files")
 
     import fnmatch
     files = [f for f in files if not any(fnmatch.fnmatch(f, pat) for pat in ignore)]
     files = [f for f in files if (repo / f).exists()]
-    if not files:
-        # Never report a green run over nothing: a broken invocation must be loud.
+    if not files and not noop:
+        # Never report a green run over nothing: if nothing could be read, say so.
         rep.fail("scope/files-found",
                  f"nothing to check (mode={mode}) — is this a git repo, and is the base ref fetchable?")
     elif mode == "all" and len(files) < 2:
