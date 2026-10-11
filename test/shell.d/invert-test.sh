@@ -103,11 +103,16 @@ end
 
 local windows = {}
 local active = nil
+local borders = {}
 hl = {
   get_windows = function() return windows end,
   get_active_window = function() return active end,
-  config = function() end,
-  get_config = function() return 2 end,
+  config = function(t)
+    if t.general and t.general.col and t.general.col.active_border ~= nil then
+      borders[#borders + 1] = t.general.col.active_border
+    end
+  end,
+  get_config = function() return { angle = 45.0, colors = { "0xEE26A269" } } end,
   timer = function() end,
   on = function() end,
 }
@@ -134,6 +139,10 @@ inv.cycle("desktop")
 ok(shader():find("int mode = 2;", 1, true) and shader():find("smoothstep(0.15, 0.85, luma)", 1, true)
    and shader():find("vec3(1.0, 1.0, 0.0)", 1, true),
    "desktop contrast selects the yellow-on-black branch")
+ok(shader():find("textureSize(tex, 0)", 1, true) and shader():find("abs(ln - rn)", 1, true),
+   "contrast snaps thin vertical strokes to the opposite extreme")
+ok(#borders >= 1 and borders[1] == "rgba(ffff00ff)",
+   "contrast forces the focused-window border to bright yellow")
 
 -- desktop invert + focused window invert cancel inside the rectangle.
 windows = { { address = "0x1", at = { x = 0, y = 0 }, size = { x = 100, y = 100 },

@@ -72,6 +72,36 @@ local function window_on()
   return window_effect ~= "off"
 end
 
+-- A focused window's border comes from the theme, and a mid-luminance theme
+-- accent (Omarchy's active border is a green gradient at ~0.5 luminance) maps to
+-- a dull olive under the contrast effect rather than a bright yellow. While any
+-- contrast effect is live the focused border is forced to full yellow, which the
+-- shader — seeing a full-luminance colour — keeps as pure yellow; the theme's
+-- own border (gradient or solid, whatever it is) is put back when the last
+-- contrast effect goes away.
+local saved_border = nil
+local border_forced = false
+
+local function contrast_active()
+  return desktop_effect == "contrast" or window_effect == "contrast"
+end
+
+local function sync_border()
+  local want = contrast_active()
+
+  if want and not border_forced then
+    saved_border = hl.get_config("general:col.active_border")
+    hl.config({ general = { col = { active_border = "rgba(ffff00ff)" } } })
+    border_forced = true
+  elseif not want and border_forced then
+    if saved_border ~= nil then
+      hl.config({ general = { col = { active_border = saved_border } } })
+    end
+    saved_border = nil
+    border_forced = false
+  end
+end
+
 -- Effective effect for the focused window, given the current desktop effect.
 -- The desktop-invert + window-invert pair cancels; every other combination
 -- resolves to the window's own effect.
@@ -168,11 +198,17 @@ local function shader_source(target)
   table.insert(lines, "  if (mode == 1) {")
   table.insert(lines, "    rgb = vec3(1.0) - rgb;")
   table.insert(lines, "  } else if (mode == 2) {")
-  table.insert(lines, "    float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));")
+  table.insert(lines, "    vec3 lw = vec3(0.2126, 0.7152, 0.0722);")
+  table.insert(lines, "    float luma = dot(rgb, lw);")
+  table.insert(lines, "    vec2 texel = 1.0 / vec2(textureSize(tex, 0));")
+  table.insert(lines, "    float ln = dot(texture(tex, v_texcoord - vec2(3.0 * texel.x, 0.0)).rgb, lw);")
+  table.insert(lines, "    float rn = dot(texture(tex, v_texcoord + vec2(3.0 * texel.x, 0.0)).rgb, lw);")
   table.insert(lines, string.format(
-    "    rgb = vec3(smoothstep(%.2f, %.2f, luma)) * vec3(1.0, 1.0, 0.0);",
-    CONTRAST_LO, CONTRAST_HI
+    "    float base = smoothstep(%.2f, %.2f, luma);", CONTRAST_LO, CONTRAST_HI
   ))
+  table.insert(lines, "    float bg = 0.5 * (ln + rn);")
+  table.insert(lines, "    float outl = (abs(ln - rn) < 0.06 && abs(luma - bg) > 0.06) ? (bg > 0.5 ? 0.0 : 1.0) : base;")
+  table.insert(lines, "    rgb = vec3(outl) * vec3(1.0, 1.0, 0.0);")
   table.insert(lines, "  }")
   table.insert(lines, "  fragColor = vec4(rgb, pixel.a);")
   table.insert(lines, "}")
@@ -181,6 +217,8 @@ local function shader_source(target)
 end
 
 local function apply()
+  sync_border()
+
   local target = nil
   if window_on() then
     target = focused_target()
