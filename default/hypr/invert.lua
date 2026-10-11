@@ -1,18 +1,41 @@
--- Color inversion, for reading a window whose own contrast fights you.
+-- Color effects, for reading a window whose own contrast fights you.
 --
 -- Hyprland exposes exactly one screen shader (decoration:screen_shader) and runs
--- it over a whole output at the end of rendering, so both inversion modes have to
--- share that single slot. This module owns it; nothing else writes screen_shader.
+-- it over a whole output at the end of rendering, so every effect has to share
+-- that single slot. This module owns it; nothing else writes screen_shader.
 --
--- Desktop mode inverts every pixel. Window mode inverts the focused window's
--- rectangle. Turning both on cancels the inversion inside the focused window,
--- which leaves that one window untouched against an otherwise inverted desktop.
+-- Three effects are available:
+--
+--   off       — the pixels untouched (no effect)
+--   invert    — every channel flipped, 1 - rgb
+--   contrast  — luminance mapped to yellow on black (maximum-contrast mode,
+--               the accessibility one: bright pixels become yellow, dark pixels
+--               black, with an S-curve that hardens the mid-tones)
+--
+-- Each scope holds one of these effects:
+--
+--   desktop — applies to every pixel of an output
+--   window  — applies to the focused window's rectangle
+--
+-- Turning desktop invert and window invert on together cancels the inversion
+-- inside the focused window, which leaves that one window untouched against an
+-- otherwise inverted desktop. Contrast always wins, since it is the
+-- accessibility effect and should never silently disappear.
+--
+-- The shortcuts cycle a scope through off -> invert -> contrast -> off.
 
 local paths = require("default.hypr.paths")
 
 local state_dir = paths.state_home .. "/omarchy"
 local shader_path = state_dir .. "/invert.frag"
 local status_path = state_dir .. "/invert.status"
+
+-- Luminance band the contrast effect stretches to the full black/yellow range.
+-- Below CONTRAST_LO a pixel is black, above CONTRAST_HI it is pure yellow, so
+-- text and UI chrome snap to maximum contrast while a gentle ramp between them
+-- keeps photos from turning into hard two-tone blocks.
+local CONTRAST_LO = 0.15
+local CONTRAST_HI = 0.85
 
 -- Hyprland has no window-moved or window-resized event, so a focused window that
 -- is dragged or resized only stays covered if its rectangle is re-read on a
@@ -22,11 +45,42 @@ local poll_interval = 100
 
 local invert = {}
 
-local enabled = { desktop = false, window = false }
+local effects = { off = true, invert = true, contrast = true }
+local cycle_next = { off = "invert", invert = "contrast", contrast = "off" }
+
+local desktop_effect = "off"
+local window_effect = "off"
 local polling = false
 local applied = nil
 local damage_tracking = nil
 local restore_pending = false
+
+local function effect_int(effect)
+  if effect == "invert" then
+    return 1
+  elseif effect == "contrast" then
+    return 2
+  end
+  return 0
+end
+
+local function desktop_on()
+  return desktop_effect ~= "off"
+end
+
+local function window_on()
+  return window_effect ~= "off"
+end
+
+-- Effective effect for the focused window, given the current desktop effect.
+-- The desktop-invert + window-invert pair cancels; every other combination
+-- resolves to the window's own effect.
+local function resolved_window_effect()
+  if window_effect == "invert" and desktop_effect == "invert" then
+    return "off"
+  end
+  return window_effect
+end
 
 local function write_file(path, contents)
   local file = io.open(path, "w")
@@ -43,7 +97,7 @@ end
 -- On a transformed output Hyprland's framebuffer is rotated relative to the
 -- layout coordinates a window reports, so a rectangle derived from them would
 -- land somewhere else on screen. Rather than draw a misplaced box, window mode
--- inverts such an output whole: no rectangle, just the output id.
+-- applies to such an output whole: no rectangle, just the output id.
 local function focused_target()
   local window = hl.get_active_window()
   if not window then
@@ -86,7 +140,7 @@ local function shader_source(target)
     "",
     "void main() {",
     "  vec4 pixel = texture(tex, v_texcoord);",
-    string.format("  bool inverted = %s;", enabled.desktop and "true" or "false"),
+    string.format("  int mode = %d;", effect_int(desktop_effect)),
   }
 
   if target then
@@ -106,11 +160,21 @@ local function shader_source(target)
       table.insert(lines, string.format("  if (wl_output == %d) {", target.output))
     end
 
-    table.insert(lines, "    inverted = !inverted;")
+    table.insert(lines, string.format("    mode = %d;", effect_int(resolved_window_effect())))
     table.insert(lines, "  }")
   end
 
-  table.insert(lines, "  fragColor = inverted ? vec4(vec3(1.0) - pixel.rgb, pixel.a) : pixel;")
+  table.insert(lines, "  vec3 rgb = pixel.rgb;")
+  table.insert(lines, "  if (mode == 1) {")
+  table.insert(lines, "    rgb = vec3(1.0) - rgb;")
+  table.insert(lines, "  } else if (mode == 2) {")
+  table.insert(lines, "    float luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));")
+  table.insert(lines, string.format(
+    "    rgb = vec3(smoothstep(%.2f, %.2f, luma)) * vec3(1.0, 1.0, 0.0);",
+    CONTRAST_LO, CONTRAST_HI
+  ))
+  table.insert(lines, "  }")
+  table.insert(lines, "  fragColor = vec4(rgb, pixel.a);")
   table.insert(lines, "}")
 
   return table.concat(lines, "\n") .. "\n"
@@ -118,11 +182,11 @@ end
 
 local function apply()
   local target = nil
-  if enabled.window then
+  if window_on() then
     target = focused_target()
   end
 
-  if not enabled.desktop and not target then
+  if not desktop_on() and not target then
     if applied ~= nil then
       applied = nil
       hl.config({ decoration = { screen_shader = "" } })
@@ -147,7 +211,7 @@ end
 -- A self-rescheduling oneshot rather than a repeating timer: turning window mode
 -- off simply stops the chain, so there is no timer handle to hold or cancel.
 local function poll()
-  if not enabled.window then
+  if not window_on() then
     polling = false
     return
   end
@@ -157,7 +221,7 @@ local function poll()
 end
 
 local function start_polling()
-  if enabled.window and not polling then
+  if window_on() and not polling then
     polling = true
     hl.timer(poll, { timeout = poll_interval, type = "oneshot" })
   end
@@ -194,7 +258,7 @@ end
 local function settle_damage_tracking()
   suspend_damage_tracking()
 
-  if enabled.window or restore_pending then
+  if window_on() or desktop_on() or restore_pending then
     return
   end
 
@@ -202,36 +266,60 @@ local function settle_damage_tracking()
   hl.timer(function()
     restore_pending = false
 
-    if not enabled.window then
+    if not window_on() and not desktop_on() then
       restore_damage_tracking()
     end
   end, { timeout = settle_duration, type = "oneshot" })
 end
 
 local function write_status()
-  write_file(status_path, string.format("desktop=%s\nwindow=%s\n", tostring(enabled.desktop), tostring(enabled.window)))
+  write_file(status_path, string.format(
+    "desktop=%s\nwindow=%s\n",
+    desktop_effect, window_effect
+  ))
 end
 
-function invert.set(mode, value)
-  if enabled[mode] == nil then
-    return
-  end
-
-  enabled[mode] = value and true or false
-
+local function refresh()
   start_polling()
   apply()
   settle_damage_tracking()
   write_status()
 end
 
-function invert.toggle(mode)
-  if enabled[mode] == nil then
+-- set(scope, effect): set an explicit effect on a scope.
+--   set('desktop', 'off'|'invert'|'contrast')  — the whole output
+--   set('window',  'off'|'invert'|'contrast')  — the focused window
+function invert.set(scope, effect)
+  if not effects[effect] then
     return
   end
 
-  invert.set(mode, not enabled[mode])
+  if scope == "desktop" then
+    desktop_effect = effect
+    refresh()
+    return
+  end
+
+  if scope == "window" then
+    window_effect = effect
+    refresh()
+    return
+  end
 end
+
+-- cycle(scope): advance a scope through off -> invert -> contrast -> off.
+--   cycle('desktop') — the whole output
+--   cycle('window')  — the focused window
+function invert.cycle(scope)
+  if scope == "desktop" then
+    invert.set("desktop", cycle_next[desktop_effect])
+  elseif scope == "window" then
+    invert.set("window", cycle_next[window_effect])
+  end
+end
+
+-- Backwards-compatible alias: the original API exposed toggle() for both scopes.
+invert.toggle = invert.cycle
 
 -- A newly focused window needs the rectangle moved before the next poll tick, so
 -- the eye never catches the old one. Fullscreening keeps the same window focused

@@ -11,8 +11,8 @@ From the terminal, the same switches are `omarchy toggle <thing>`. Run `omarchy 
 | Toggle | Hotkey | Command |
 | ------ | ------ | ------- |
 | Night light | `Super + Ctrl + N` | `omarchy toggle nightlight` |
-| Invert the focused window | `Super + Ctrl + U` | `omarchy toggle invert window` |
-| Invert the desktop | `Super + Ctrl + Alt + U` | `omarchy toggle invert desktop` |
+| Cycle the focused window: off → invert → high-contrast | `Super + Ctrl + U` | `omarchy toggle invert window` |
+| Cycle the desktop: off → invert → high-contrast | `Super + Ctrl + Alt + U` | `omarchy toggle invert desktop` |
 | Silence notifications | `Super + Ctrl + ,` | `omarchy toggle notification silencing` |
 | Stay awake (no idle lock) | `Super + Ctrl + I` | `omarchy toggle idle` |
 | Crash capture | — | `omarchy toggle crash-capture` |
@@ -58,15 +58,17 @@ Then start hyprsunset at login by adding `o.launch_on_start("hyprsunset")` to `~
 
 ### Color inversion
 
-Some windows fight you. A PDF that is black text on white at midnight, a web app with no dark mode, a photo you need to read the shadows out of. `Super + Ctrl + U` inverts the colors of whichever window has focus and leaves the rest of the desktop alone, and `Super + Ctrl + Alt + U` inverts everything instead.
+Some windows fight you. A PDF that is black text on white at midnight, a web app with no dark mode, a photo you need to read the shadows out of. `Super + Ctrl + U` cycles the window that has focus through three effects — off, color inversion, and a high-contrast yellow-on-black mode — and leaves the rest of the desktop alone; `Super + Ctrl + Alt + U` cycles the whole desktop the same way.
 
-The window one follows focus. Move to another window and the inversion moves with you, including when you drag or resize the window it is sitting on.
+The window effect follows focus. Move to another window and the effect moves with you, including when you drag or resize the window it is sitting on.
 
-The two are independent switches, which makes the combination worth knowing: turn both on and the inversions cancel inside the focused window, so you get a normal-looking window on an inverted desktop. That is the setting for reading one correctly-colored photo or video on a screen you have otherwise darkened.
+High-contrast is the readability mode. It throws color away and maps brightness to yellow on black — bright pixels glow yellow, dark pixels go black — with the mid-tones pushed apart so text and UI chrome come out as legible as the screen can make them. Reach for it when a window is hard to read rather than merely the wrong way round; reach for inversion when you want the picture intact but flipped.
+
+The desktop and window effects are independent, which makes one combination worth knowing: desktop inversion plus window inversion cancel inside the focused window, so you get a normal-looking window on an inverted desktop. That is the setting for reading one correctly-colored photo or video on a screen you have otherwise darkened. High-contrast wins over the desktop effect, since it is the accessibility one and should never quietly disappear.
 
 Both are runtime modes rather than saved settings. They come off on their own when Hyprland reloads, and neither survives a logout.
 
-Hyprland gives a compositor one screen shader and applies it to a whole monitor, so both modes share it and Omarchy generates that shader as you flip the switches. On a rotated monitor the window rectangle cannot be placed reliably, so window inversion falls back to inverting that whole monitor.
+Hyprland gives a compositor one screen shader and applies it to a whole monitor, so both scopes share it and Omarchy generates that shader as you change effects. On a rotated monitor the window rectangle cannot be placed reliably, so window effects fall back to covering that whole monitor.
 
 Hyprland also re-runs that shader only over the parts of the screen that changed, which would leave everything else showing the previous shader's pixels — a screen broken into inverted and uninverted fragments. Omarchy avoids that by redrawing whole frames for as long as the picture could still be wrong: continuously while window inversion is on, since its rectangle keeps moving, and for a moment after any other switch. So window inversion costs GPU time the whole time it is on, where desktop inversion only costs it briefly and then settles.
 

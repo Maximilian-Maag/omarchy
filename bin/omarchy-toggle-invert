@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# omarchy:summary=Toggle color inversion for the whole desktop or the focused window
-# omarchy:args=<desktop|window> [on|off|toggle|--status]
-# omarchy:examples=omarchy toggle invert desktop | omarchy toggle invert window off
+# omarchy:summary=Cycle color effects (invert / high-contrast) for the whole desktop or the focused window
+# omarchy:args=<desktop|window> [on|off|invert|contrast|toggle|--status]
+# omarchy:examples=omarchy toggle invert desktop | omarchy toggle invert window contrast
 
-# Both modes share Hyprland's single screen shader, so the state lives in
+# Both scopes share Hyprland's single screen shader, so the state lives in
 # default/hypr/invert.lua and this command only nudges it. That module writes the
 # status file read back here.
 
@@ -12,7 +12,7 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
 STATUS_FILE="$STATE_DIR/invert.status"
 
 usage() {
-  echo "Usage: omarchy-toggle-invert <desktop|window> [on|off|toggle|--status]" >&2
+  echo "Usage: omarchy-toggle-invert <desktop|window> [on|off|invert|contrast|toggle|--status]" >&2
 }
 
 MODE="$1"
@@ -24,21 +24,31 @@ if [[ $MODE != "desktop" && $MODE != "window" ]]; then
 fi
 
 if [[ $ACTION == "--status" ]]; then
-  enabled=false
-  if [[ -r $STATUS_FILE ]] && grep -qx "$MODE=true" "$STATUS_FILE"; then
-    enabled=true
+  effect=off
+  if [[ -r $STATUS_FILE ]]; then
+    raw="$(sed -n "s/^$MODE=//p" "$STATUS_FILE")"
+    case $raw in
+      invert|contrast) effect="$raw" ;;
+      true)            effect=invert ;;   # accept a pre-effect-model status file
+      *)               effect=off ;;
+    esac
   fi
 
-  jq -cn --arg mode "$MODE" --argjson enabled "$enabled" '{mode:$mode, enabled:$enabled}'
+  enabled=false
+  [[ $effect != "off" ]] && enabled=true
+
+  jq -cn --arg mode "$MODE" --arg effect "$effect" --argjson enabled "$enabled" \
+    '{mode:$mode, effect:$effect, enabled:$enabled}'
   exit 0
 fi
 
 mkdir -p "$STATE_DIR"
 
 case $ACTION in
-  on) call="set('$MODE', true)" ;;
-  off) call="set('$MODE', false)" ;;
-  toggle) call="toggle('$MODE')" ;;
+  on|invert) call="set('$MODE', 'invert')" ;;
+  contrast)  call="set('$MODE', 'contrast')" ;;
+  off)       call="set('$MODE', 'off')" ;;
+  toggle)    call="cycle('$MODE')" ;;
   *)
     usage
     exit 1
